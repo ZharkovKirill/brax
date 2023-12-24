@@ -56,7 +56,6 @@ setup(
         "numpy",
         "optax",
         "Pillow",
-        "pytinyrenderer",
         "scipy",
         "tensorboardX",
         "trimesh==3.9.35",
