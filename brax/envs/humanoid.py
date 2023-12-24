@@ -22,6 +22,7 @@ from brax.io import mjcf
 from etils import epath
 import jax
 from jax import numpy as jp
+import mujoco
 
 
 class Humanoid(PipelineEnv):
@@ -201,6 +202,12 @@ class Humanoid(PipelineEnv):
           350.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0])  # pyformat: disable
       sys = sys.replace(actuator=sys.actuator.replace(gear=gear))
 
+    if backend == 'mjx':
+      sys._model.opt.solver = mujoco.mjtSolver.mjSOL_NEWTON
+      sys._model.opt.disableflags = mujoco.mjtDisableBit.mjDSBL_EULERDAMP
+      sys._model.opt.iterations = 1
+      sys._model.opt.ls_iterations = 4
+
     kwargs['n_frames'] = kwargs.get('n_frames', n_frames)
 
     super().__init__(sys=sys, backend=backend, **kwargs)
@@ -215,7 +222,7 @@ class Humanoid(PipelineEnv):
         exclude_current_positions_from_observation
     )
 
-  def reset(self, rng: jp.ndarray) -> State:
+  def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
     rng, rng1, rng2 = jax.random.split(rng, 3)
 
@@ -244,7 +251,7 @@ class Humanoid(PipelineEnv):
     }
     return State(pipeline_state, obs, reward, done, metrics)
 
-  def step(self, state: State, action: jp.ndarray) -> State:
+  def step(self, state: State, action: jax.Array) -> State:
     """Runs one timestep of the environment's dynamics."""
     pipeline_state0 = state.pipeline_state
     pipeline_state = self.pipeline_step(pipeline_state0, action)
@@ -255,10 +262,8 @@ class Humanoid(PipelineEnv):
     forward_reward = self._forward_reward_weight * velocity[0]
 
     min_z, max_z = self._healthy_z_range
-    is_healthy = jp.where(pipeline_state.x.pos[0, 2] < min_z, x=0.0, y=1.0)
-    is_healthy = jp.where(
-        pipeline_state.x.pos[0, 2] > max_z, x=0.0, y=is_healthy
-    )
+    is_healthy = jp.where(pipeline_state.x.pos[0, 2] < min_z, 0.0, 1.0)
+    is_healthy = jp.where(pipeline_state.x.pos[0, 2] > max_z, 0.0, is_healthy)
     if self._terminate_when_unhealthy:
       healthy_reward = self._healthy_reward
     else:
@@ -286,8 +291,8 @@ class Humanoid(PipelineEnv):
     )
 
   def _get_obs(
-      self, pipeline_state: base.State, action: jp.ndarray
-  ) -> jp.ndarray:
+      self, pipeline_state: base.State, action: jax.Array
+  ) -> jax.Array:
     """Observes humanoid body position, velocities, and angles."""
     position = pipeline_state.q
     velocity = pipeline_state.qd
@@ -322,7 +327,7 @@ class Humanoid(PipelineEnv):
         qfrc_actuator,
     ])
 
-  def _com(self, pipeline_state: base.State) -> jp.ndarray:
+  def _com(self, pipeline_state: base.State) -> jax.Array:
     inertia = self.sys.link.inertia
     if self.backend in ['spring', 'positional']:
       inertia = inertia.replace(

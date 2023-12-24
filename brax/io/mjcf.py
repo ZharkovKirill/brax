@@ -268,8 +268,6 @@ def load_model(mj: mujoco.MjModel) -> System:
     raise NotImplementedError('geom_solmix parameter not supported.')
   if (mj.geom_priority[0] != mj.geom_priority).any():
     raise NotImplementedError('geom_priority parameter not supported.')
-  if mj.opt.collision == 1:
-    raise NotImplementedError('Predefined collisions not supported.')
   q_width = {0: 7, 1: 4, 2: 1, 3: 1}
   non_free = np.concatenate([[j != 0] * q_width[j] for j in mj.jnt_type])
   if mj.qpos0[non_free].any():
@@ -499,6 +497,7 @@ def load_model(mj: mujoco.MjModel) -> System:
   )
 
   sys = jax.tree_map(jp.array, sys)
+  sys.set_model(mj)
 
   return sys
 
@@ -525,13 +524,18 @@ def loads(xml: str, asset_path: Union[str, epath.Path, None] = None) -> System:
   return load_model(mj)
 
 
-def load(path: Union[str, epath.Path]):
-  """Loads a brax system from a MuJoCo mjcf file path."""
+def load_mjmodel(path: Union[str, epath.Path]):
+  """Loads an mj model from a MuJoCo mjcf file path."""
   elem = ElementTree.fromstring(epath.Path(path).read_text())
   _fuse_bodies(elem)
   meshdir = _get_meshdir(elem)
   assets = _find_assets(elem, epath.Path(path), meshdir)
   xml = ElementTree.tostring(elem, encoding='unicode')
   mj = mujoco.MjModel.from_xml_string(xml, assets=assets)
+  return mj
 
+
+def load(path: Union[str, epath.Path]):
+  """Loads a brax system from a MuJoCo mjcf file path."""
+  mj = load_mjmodel(path)
   return load_model(mj)

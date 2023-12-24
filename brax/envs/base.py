@@ -20,22 +20,22 @@ from typing import Any, Dict, Optional
 
 from brax import base
 from brax.generalized import pipeline as g_pipeline
+from brax.mjx import pipeline as m_pipeline
 from brax.positional import pipeline as p_pipeline
 from brax.spring import pipeline as s_pipeline
 from flax import struct
 import jax
-from jax import numpy as jp
 
 
 @struct.dataclass
-class State:
+class State(base.Base):
   """Environment state for training and inference."""
 
   pipeline_state: Optional[base.State]
-  obs: jp.ndarray
-  reward: jp.ndarray
-  done: jp.ndarray
-  metrics: Dict[str, jp.ndarray] = struct.field(default_factory=dict)
+  obs: jax.Array
+  reward: jax.Array
+  done: jax.Array
+  metrics: Dict[str, jax.Array] = struct.field(default_factory=dict)
   info: Dict[str, Any] = struct.field(default_factory=dict)
 
 
@@ -43,11 +43,11 @@ class Env(abc.ABC):
   """Interface for driving training and inference."""
 
   @abc.abstractmethod
-  def reset(self, rng: jp.ndarray) -> State:
+  def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
 
   @abc.abstractmethod
-  def step(self, state: State, action: jp.ndarray) -> State:
+  def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
 
   @property
@@ -98,6 +98,7 @@ class PipelineEnv(Env):
 
     pipeline = {
         'generalized': g_pipeline,
+        'mjx': m_pipeline,
         'spring': s_pipeline,
         'positional': p_pipeline,
     }
@@ -109,13 +110,11 @@ class PipelineEnv(Env):
     self._n_frames = n_frames
     self._debug = debug
 
-  def pipeline_init(self, q: jp.ndarray, qd: jp.ndarray) -> base.State:
+  def pipeline_init(self, q: jax.Array, qd: jax.Array) -> base.State:
     """Initializes the pipeline state."""
     return self._pipeline.init(self.sys, q, qd, self._debug)
 
-  def pipeline_step(
-      self, pipeline_state: Any, action: jp.ndarray
-  ) -> base.State:
+  def pipeline_step(self, pipeline_state: Any, action: jax.Array) -> base.State:
     """Takes a physics step using the physics pipeline."""
 
     def f(state, _):
@@ -127,7 +126,7 @@ class PipelineEnv(Env):
     return jax.lax.scan(f, pipeline_state, (), self._n_frames)[0]
 
   @property
-  def dt(self) -> jp.ndarray:
+  def dt(self) -> jax.Array:
     """The timestep used for each env step."""
     return self.sys.dt * self._n_frames
 
@@ -152,10 +151,10 @@ class Wrapper(Env):
   def __init__(self, env: Env):
     self.env = env
 
-  def reset(self, rng: jp.ndarray) -> State:
+  def reset(self, rng: jax.Array) -> State:
     return self.env.reset(rng)
 
-  def step(self, state: State, action: jp.ndarray) -> State:
+  def step(self, state: State, action: jax.Array) -> State:
     return self.env.step(state, action)
 
   @property

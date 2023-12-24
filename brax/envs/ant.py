@@ -22,6 +22,7 @@ from brax.io import mjcf
 from etils import epath
 import jax
 from jax import numpy as jp
+import mujoco
 
 
 class Ant(PipelineEnv):
@@ -166,6 +167,12 @@ class Ant(PipelineEnv):
       sys = sys.replace(dt=0.005)
       n_frames = 10
 
+    if backend == 'mjx':
+      sys._model.opt.solver = mujoco.mjtSolver.mjSOL_NEWTON
+      sys._model.opt.disableflags = mujoco.mjtDisableBit.mjDSBL_EULERDAMP
+      sys._model.opt.iterations = 1
+      sys._model.opt.ls_iterations = 4
+
     if backend == 'positional':
       # TODO: does the same actuator strength work as in spring
       sys = sys.replace(
@@ -193,7 +200,7 @@ class Ant(PipelineEnv):
     if self._use_contact_forces:
       raise NotImplementedError('use_contact_forces not implemented.')
 
-  def reset(self, rng: jp.ndarray) -> State:
+  def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
     rng, rng1, rng2 = jax.random.split(rng, 3)
 
@@ -221,7 +228,7 @@ class Ant(PipelineEnv):
     }
     return State(pipeline_state, obs, reward, done, metrics)
 
-  def step(self, state: State, action: jp.ndarray) -> State:
+  def step(self, state: State, action: jax.Array) -> State:
     """Run one timestep of the environment's dynamics."""
     pipeline_state0 = state.pipeline_state
     pipeline_state = self.pipeline_step(pipeline_state0, action)
@@ -230,10 +237,8 @@ class Ant(PipelineEnv):
     forward_reward = velocity[0]
 
     min_z, max_z = self._healthy_z_range
-    is_healthy = jp.where(pipeline_state.x.pos[0, 2] < min_z, x=0.0, y=1.0)
-    is_healthy = jp.where(
-        pipeline_state.x.pos[0, 2] > max_z, x=0.0, y=is_healthy
-    )
+    is_healthy = jp.where(pipeline_state.x.pos[0, 2] < min_z, 0.0, 1.0)
+    is_healthy = jp.where(pipeline_state.x.pos[0, 2] > max_z, 0.0, is_healthy)
     if self._terminate_when_unhealthy:
       healthy_reward = self._healthy_reward
     else:
@@ -260,7 +265,7 @@ class Ant(PipelineEnv):
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
     )
 
-  def _get_obs(self, pipeline_state: base.State) -> jp.ndarray:
+  def _get_obs(self, pipeline_state: base.State) -> jax.Array:
     """Observe ant body position and velocities."""
     qpos = pipeline_state.q
     qvel = pipeline_state.qd
